@@ -1,0 +1,21 @@
+workers:
+
+  - worker_id: mock_account_001
+    provider: mock
+    worker_type: success_mock
+    enabled: true
+
+  - worker_id: mock_account_002
+    provider: mock
+    worker_type: success_mock
+    enabled: true
+
+  - worker_id: mock_account_003
+    provider: mock
+    worker_type: success_mock
+    enabled: true
+
+  - worker_id: mock_account_004
+    provider: mock
+    worker_type: success_mock
+    enabled: true

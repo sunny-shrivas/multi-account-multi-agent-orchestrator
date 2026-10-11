@@ -1,0 +1,7 @@
+python-dotenv
+pydantic
+pyyaml
+pytest
+networkx
+openai
+anthropic

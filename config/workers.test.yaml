@@ -1,0 +1,21 @@
+workers:
+
+  - worker_id: mock_001
+    provider: mock
+    worker_type: mock
+    enabled: true
+
+  - worker_id: mock_002
+    provider: mock
+    worker_type: mock
+    enabled: true
+
+  - worker_id: mock_003
+    provider: mock
+    worker_type: mock
+    enabled: true
+
+  - worker_id: disabled_001
+    provider: mock
+    worker_type: mock
+    enabled: false

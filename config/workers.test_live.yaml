@@ -1,0 +1,20 @@
+workers:
+
+  - worker_id: openai_test
+    provider: openai
+    worker_type: live
+    api_key_env: TEST_OPENAI_KEY
+    model: test-model
+    enabled: true
+
+  - worker_id: claude_test
+    provider: anthropic
+    worker_type: live
+    api_key_env: TEST_ANTHROPIC_KEY
+    model: test-model
+    enabled: true
+
+  - worker_id: mock_test
+    provider: mock
+    worker_type: mock
+    enabled: true
