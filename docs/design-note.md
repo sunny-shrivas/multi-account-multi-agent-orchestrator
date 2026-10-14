@@ -4,16 +4,17 @@
 
 The goal of this project is to coordinate multiple AI Workers to complete a larger plan while keeping execution controlled, observable, and verifiable.
 
-The Master Orchestrator decomposes a plan into tasks, tracks dependencies, assigns work to available Workers, handles failures, and verifies deliverables before marking tasks complete.
+The Master Orchestrator coordinates task execution, tracks dependencies, assigns work to available Workers, handles failures, and verifies deliverables before marking tasks complete.
 
-The prototype uses a common Worker interface, supports mock Workers for repeatable testing, and includes integrations for OpenAI and Anthropic Claude.
+The prototype includes a deterministic plan parser, a common Worker interface, mock Workers for repeatable testing, and integrations for OpenAI and Anthropic Claude. Successful live-provider execution has not been demonstrated in this submission.
 
 ## 2. Requirements and Design Decisions
 
 | Requirement | Design approach |
 |---|---|
 | Multiple AI accounts | Account Manager loads Worker configurations |
-| Task decomposition and dependencies | Master Orchestrator and dependency graph |
+| Written project plan | Deterministic parser converts plan items into tasks |
+| Task dependencies | Explicit dependency information and dependency graph |
 | Worker assignment | Scheduler assigns eligible tasks |
 | Isolated execution | Separate Worker workspaces and path restrictions |
 | Structured results | Shared `WorkerResult` schema |
@@ -24,41 +25,46 @@ The prototype uses a common Worker interface, supports mock Workers for repeatab
 
 ## 3. Architecture
 
-The system is organized into six main areas:
+The system is organized into these main areas:
 
-1. **Account Manager:** Loads Worker configurations and resolves credentials from environment variables.
-2. **Master Orchestrator:** Coordinates task execution and verification.
-3. **Dependency Graph:** Tracks task prerequisites and readiness.
-4. **Scheduler:** Assigns work and handles retry or reassignment.
+1. **Plan Parser:** Converts supported written plan formats into task objects. It does not use an LLM to infer task breakdowns.
+2. **Account Manager:** Loads Worker configurations and resolves credentials from environment variables.
+3. **Master Orchestrator:** Coordinates task execution and verification.
+4. **Dependency Graph and Scheduler:** Tracks prerequisites, selects eligible tasks, and manages assignment and retries.
 5. **Workers:** Execute tasks and return standardized results.
 6. **Verification and Reporting:** Checks deliverables and reports planned versus completed work.
 
 The architecture diagram is maintained in [architecture.md](architecture.md).
 
-## 4. Master Orchestrator
+## 4. Plan Parsing and Master Orchestration
 
-The Master acts as the control plane. It coordinates work rather than blindly accepting a Worker’s completion claim.
+The Master acts as the control plane. It coordinates work rather than blindly accepting a Worker's completion claim.
 
-The execution lifecycle is:
+The current plan-ingestion flow is:
 
-1. Receive a plan.
-2. Create tasks and dependencies.
-3. Find tasks whose prerequisites are verified.
-4. Assign eligible tasks to available Workers.
-5. Collect structured Worker results.
-6. Verify the resulting artifacts.
-7. Accept valid output or retry/reassign rejected work.
-8. Produce a plan-versus-delivered report.
+1. Receive a written project plan.
+2. Parse supported numbered, bulleted, or line-separated task items.
+3. Construct task objects with available acceptance criteria and dependency information.
+4. Validate task references, acceptance-criteria references, and dependency cycles.
+5. Build the execution graph.
+6. Find tasks whose prerequisites have been verified.
+7. Assign eligible tasks to available Workers.
+8. Collect structured Worker results.
+9. Verify the resulting artifacts.
+10. Accept valid output or retry/reassign rejected work.
+11. Produce a plan-versus-delivered report.
 
-A task should not be marked complete merely because a Worker returns a successful status.
+The parser is deterministic. It does not independently reason about a high-level goal, invent missing subtasks, or infer dependencies using an LLM. Plans requiring complex decomposition should provide explicit task details, acceptance criteria, and dependencies.
+
+A task must not be marked complete merely because a Worker returns a successful status.
 
 ## 5. Scheduling and Dependencies
 
 The dependency graph prevents tasks from executing before their prerequisites are verified.
 
-The Scheduler selects eligible tasks and assigns them to available Workers. When a Worker fails, the Scheduler can retry or reassign the task within configured limits.
+The Scheduler selects eligible tasks and assigns them to available Workers. When a Worker fails or its output is rejected, retry or reassignment can occur within the configured limits.
 
-If a prerequisite remains unresolved, dependent tasks should remain blocked. If retries are exhausted or no suitable Worker is available, the system should report the unresolved work rather than claim full completion.
+If a prerequisite remains unresolved, dependent tasks should remain blocked. If retries are exhausted or no suitable Worker is available, the system should report unresolved work rather than claim full completion.
 
 ## 6. Account Management and Worker Abstraction
 
@@ -66,9 +72,9 @@ Worker definitions are loaded from configuration. The Account Manager supports c
 
 Provider credentials are resolved from environment variables rather than hard-coded into source files.
 
-The common Worker interface lets the Master coordinate different Worker types without relying on provider-specific response formats.
+The common Worker interface allows the Master to coordinate different Worker types without relying on provider-specific response formats.
 
-Live-provider execution requires valid credentials, network access, and sufficient provider quota. Live execution has not been demonstrated as part of this submission because API credits were unavailable.
+Live-provider execution requires valid credentials, network access, and sufficient provider quota. Successful live execution has not been demonstrated as part of this submission because API credits were unavailable.
 
 ## 7. Worker Result Contract
 
@@ -81,7 +87,7 @@ Each Worker returns a structured `WorkerResult` containing:
 - `notes`
 - `error`
 
-This contract makes Worker outcomes consistent and gives the Master the information needed for orchestration and verification.
+This contract standardizes Worker outcomes and gives the Master the information needed for orchestration and verification.
 
 Malformed or incomplete results should be rejected through schema validation rather than silently treated as successful output.
 
@@ -110,19 +116,19 @@ These checks do not prove that arbitrary code is correct, secure, or semanticall
 
 ## 10. Failure Handling
 
-The prototype covers several failure scenarios:
+The prototype includes failure-handling behavior exercised through mock Workers and tests.
 
 ### Worker crash or failure
 
-The failure should be returned as a structured result. The task must not be marked verified, and retry or reassignment should follow the scheduler's policy.
+The failure should be returned as a structured result. The task must not be marked verified, and retry or reassignment should follow the Scheduler's policy.
 
 ### Quota exhaustion
 
-A quota failure should not count as task completion. The scheduler should attempt an eligible alternative Worker when possible. If none is available, the task and affected dependencies should remain unresolved.
+A quota failure should not count as task completion. The Scheduler should attempt an eligible alternative Worker when possible. If none is available, the task and affected dependencies should remain unresolved.
 
 ### Rejected output
 
-If the Verification Gate rejects a Worker’s output, the Master should retain the rejection reason and allow retry or reassignment within the configured limit.
+If the Verification Gate rejects a Worker's output, the Master should retain the rejection reason and allow retry or reassignment within the configured limit.
 
 ### No available Worker
 
@@ -154,7 +160,7 @@ A production version should include:
 
 ## 12. Prompt-Injection Defence
 
-Repository files, READMEs, issue descriptions, and Worker-generated content must be treated as untrusted input. Instructions found inside such content must not override the system's authorized policies.
+Repository files, READMEs, issue descriptions, and Worker-generated content must be treated as untrusted input. Instructions found inside such content must not override authorized system policies.
 
 The application should separate trusted orchestration instructions from untrusted task data. Tool permissions must be enforced outside the language model, because prompt wording alone is not a security boundary.
 
@@ -184,11 +190,11 @@ Sensitive values such as API keys must not be written to logs. Production loggin
 
 ## 15. Testing Strategy
 
-The test suite should cover both successful execution and failure handling.
+The test suite covers successful execution and failure handling. The current suite contains 94 passing tests.
 
 ### Happy path
 
-A plan is decomposed into tasks, eligible Workers execute the work, the Verification Gate accepts valid output, dependencies progress, and the report reflects delivered work.
+A written plan is parsed into tasks, eligible Workers execute the work, the Verification Gate accepts valid output, dependencies progress, and the report reflects delivered work.
 
 ### Failure tests
 
@@ -196,7 +202,7 @@ A plan is decomposed into tasks, eligible Workers execute the work, the Verifica
 - Quota exhaustion does not falsely complete a task.
 - Bad Worker output is rejected and must pass verification before acceptance.
 
-Additional tests should cover malformed Worker results, dependency cycles, workspace traversal attempts, sensitive-log redaction, retry limits, and the absence of eligible Workers.
+Additional tests cover areas such as malformed Worker results, dependency validation, workspace traversal attempts, sensitive-log redaction, retry limits, and the absence of eligible Workers.
 
 The tests validate the prototype's implemented behavior; they do not establish production-level security or reliability.
 
@@ -248,14 +254,15 @@ The report should not describe unverified work as completed.
 The current prototype has the following limitations:
 
 1. Live-provider execution has not been demonstrated in this submission.
-2. Verification is primarily deterministic rather than a comprehensive semantic correctness assessment.
-3. Workspace and command guards are not equivalent to a hardened operating-system sandbox.
-4. Automated Git conflict resolution is not implemented.
-5. A complete human-approval workflow is not implemented.
-6. Production-scale performance with twenty live accounts has not been measured.
-7. Provider compliance depends on the specific integration method and applicable terms.
+2. Plan parsing is deterministic and does not provide LLM-based task decomposition.
+3. Verification is primarily deterministic rather than a comprehensive semantic correctness assessment.
+4. Workspace and command guards are not equivalent to a hardened operating-system sandbox.
+5. Automated Git conflict resolution is not implemented.
+6. A complete human-approval workflow is not implemented.
+7. Production-scale performance with twenty live accounts has not been measured.
+8. Provider compliance depends on the specific integration method and applicable terms.
 
-These limitations are stated explicitly to distinguish demonstrated functionality from future design proposals.
+These limitations distinguish demonstrated functionality from future design proposals.
 
 ## 21. Production-Hardening Roadmap
 
@@ -269,9 +276,10 @@ A reasonable next phase would prioritize:
 6. A risk-based human-approval workflow.
 7. Centralized observability and cost tracking.
 8. A review of provider terms and approved authentication methods.
+9. More flexible, optionally LLM-assisted planning with explicit validation of generated tasks and dependencies.
 
 ## 22. Conclusion
 
-The prototype demonstrates the core orchestration pattern: the Master coordinates work, Workers execute tasks, and a Verification Gate checks deliverables before acceptance.
+The prototype demonstrates the core orchestration pattern: the plan parser converts supported written plans into tasks, the Master coordinates execution, Workers perform assigned work, and a Verification Gate checks deliverables before acceptance.
 
-Its central design principle is that completion must be based on evidence, not merely on a Worker or Master claiming success. The next stage is to strengthen isolation, verification, recovery, and approval controls before treating the system as production-ready.
+Its central design principle is that completion must be based on evidence, not merely on a Worker or Master claiming success. The next stage is to strengthen planning, isolation, verification, recovery, and approval controls before treating the system as production-ready.
