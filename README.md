@@ -26,14 +26,17 @@ The central principle is simple: a Worker claiming that a task is complete is no
 
 This project explores how multiple AI Workers can collaborate on a larger engineering plan while a central orchestrator controls task execution and validates results.
 
-The Master Orchestrator is responsible for coordination, scheduling, failure handling, and verification. Workers execute individual tasks and return results through a shared data contract.
+The Master Orchestrator coordinates task execution, dependency-aware scheduling, failure handling, verification, and reporting. Workers execute individual tasks and return results through a shared data contract.
 
 The prototype supports mock Workers for repeatable testing and includes integrations for OpenAI and Anthropic Claude, subject to valid credentials, provider access, and quota availability.
+
+**Live-provider status:** The OpenAI and Claude adapter implementations exist, but successful execution across two live provider accounts has not been demonstrated for this submission. The demonstrations described below use mock Workers.
 
 ## Features
 
 - **Multi-Worker orchestration:** Coordinate multiple configured Workers through one Master.
 - **Account management:** Load Worker definitions from configuration.
+- **Written plan ingestion:** Convert numbered, bulleted, or line-separated plan items into structured tasks using a deterministic parser.
 - **Dependency-aware scheduling:** Execute eligible tasks while respecting prerequisites.
 - **Parallel execution:** Allow independent tasks to run concurrently.
 - **Structured Worker results:** Normalize task outcomes through a shared `WorkerResult` contract.
@@ -49,7 +52,8 @@ The prototype supports mock Workers for repeatable testing and includes integrat
 ```mermaid
 flowchart TD
     U[User submits project plan] --> M[Master Orchestrator]
-    M --> D[Dependency Graph]
+    M --> P[Deterministic Plan Parser]
+    P --> D[Dependency Graph]
     A[Account Manager] --> S[Scheduler]
     D --> S
     S --> W1[OpenAI Worker]
@@ -65,20 +69,23 @@ flowchart TD
     C --> D
     C --> L[Run Logger]
     V --> L
-    D --> P[Plan-versus-Delivered Report]
+    D --> Q[Plan-versus-Delivered Report]
 ```
 
 ### Execution lifecycle
 
-1. The user provides a project plan.
-2. The Master decomposes the work into tasks and dependencies.
-3. The Scheduler selects tasks whose prerequisites are verified.
-4. An available Worker executes each assigned task.
-5. The Worker returns a structured result and reports its output artifacts.
-6. The Verification Gate checks the output against the configured criteria.
-7. Accepted tasks are marked verified; rejected or failed tasks can be retried or reassigned.
-8. Unresolved tasks and blocked dependencies are reported rather than silently treated as successful.
-9. The system produces a final plan-versus-delivered report.
+1. The user provides a written project plan.
+2. The current deterministic parser converts plan items into structured tasks. Dependencies and acceptance criteria can be supplied explicitly.
+3. The Master validates the tasks and their dependency relationships.
+4. The Scheduler selects tasks whose prerequisites are verified.
+5. An available Worker executes each assigned task.
+6. The Worker returns a structured result and reports its output artifacts.
+7. The Verification Gate checks the output against the configured criteria.
+8. Accepted tasks are marked verified; rejected or failed tasks can be retried or reassigned.
+9. Unresolved tasks and blocked dependencies are reported rather than silently treated as successful.
+10. The system produces a final plan-versus-delivered report.
+
+**Important distinction:** The current plan parser is deterministic; it does not use an LLM to infer or generate a project plan. AI-based planning and decomposition would be a future enhancement.
 
 ## Project Structure
 
@@ -87,8 +94,8 @@ multi-account-orchestrator/
 ├── account/          # Account and Worker configuration management
 ├── config/           # Worker configuration examples
 ├── docs/             # Architecture, design note, and scenario answers
-├── models/           # Shared schemas and data models
-├── orchestrator/     # Master, scheduler, and dependency graph
+├── models/            # Shared schemas and data models
+├── orchestrator/     # Master, scheduler, dependency graph, plan parser
 ├── security/         # Workspace, command, and logging guardrails
 ├── tests/            # Automated tests
 ├── ui/               # Streamlit interface
@@ -101,7 +108,7 @@ multi-account-orchestrator/
 └── README.md
 ```
 
-This tree describes the intended repository organization. Refer to the actual files in the repository for the current implementation.
+This tree summarizes the repository organization. Refer to the actual files in the repository for the current implementation.
 
 ## Requirements
 
@@ -109,7 +116,7 @@ This tree describes the intended repository organization. Refer to the actual fi
 - Git.
 - `pip`.
 - API credentials only if testing a live provider integration.
-- Streamlit if running the interactive interface.
+- Streamlit for the interactive interface.
 
 Check your Python version:
 
@@ -126,16 +133,18 @@ git clone https://github.com/sunny-shrivas/multi-account-multi-agent-orchestrato
 cd multi-account-multi-agent-orchestrator
 ```
 
+If the repository has a different canonical URL, use the URL shown on its GitHub page.
+
 ### 2. Create a virtual environment
 
-macOS/Linux:
+**macOS/Linux:**
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Windows PowerShell:
+**Windows PowerShell:**
 
 ```powershell
 python -m venv .venv
@@ -151,7 +160,7 @@ pip install -r requirements.txt
 
 ### 4. Configure environment variables
 
-Create your local environment file:
+Create a local environment file:
 
 ```bash
 cp .env.example .env
@@ -166,6 +175,8 @@ OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
 ANTHROPIC_API_KEY=
 ```
+
+The model name shown is an example. Confirm that the configured model is supported by your provider account and the installed SDK.
 
 Keep credentials private. Never commit `.env` or paste API keys into source files, prompts, screenshots, or logs.
 
@@ -192,7 +203,9 @@ From the repository root, with the virtual environment activated:
 python main.py
 ```
 
-Use the configuration and arguments expected by the current entry point. If the script requires additional options, inspect its help output or implementation before running it.
+The current entry point loads the configured demo Workers, parses a written sample plan, executes the resulting tasks, and prints a delivery report.
+
+The demo currently uses mock Workers. It demonstrates orchestration behavior, not successful live-provider calls.
 
 ### Run the Streamlit interface
 
@@ -200,11 +213,9 @@ Use the configuration and arguments expected by the current entry point. If the 
 streamlit run ui/app.py
 ```
 
-If Streamlit is not installed in the environment, install the project's declared dependencies first.
-
 The interface includes mock execution scenarios for normal execution, Worker failure, quota exhaustion, and bad-output rejection.
 
-**Note:** The live OpenAI and Claude execution paths are implemented, but live-provider execution was not demonstrated for this submission because API credits were unavailable. No live execution is claimed.
+**Live-provider disclosure:** The OpenAI and Claude execution paths are implemented, but successful live-provider execution was not demonstrated for this submission because API credits were unavailable. The current demo uses mock Workers; no live execution is claimed.
 
 ## Testing
 
@@ -220,9 +231,10 @@ For verbose test output:
 pytest -v
 ```
 
-The test suite is intended to cover the core orchestration workflow and important failure cases, including:
+The test suite covers core orchestration behavior and important failure cases, including:
 
 - Successful task execution.
+- Written-plan parsing and validation.
 - Worker failure handling.
 - Quota exhaustion.
 - Rejection of bad Worker output.
@@ -232,7 +244,9 @@ The test suite is intended to cover the core orchestration workflow and importan
 - Sensitive-field log redaction.
 - Worker result validation.
 
-The actual passing count should be taken from the latest local test run. Passing tests demonstrate the tested behavior, not complete production readiness.
+The latest local test result reported for this submission is **94 passed**. Run the tests again after making changes to confirm the current result.
+
+Passing tests demonstrate the tested behavior; they do not establish complete production readiness or successful live-provider integration.
 
 ## Security and Guardrails
 
@@ -248,7 +262,7 @@ These controls have important limits. Pattern-based command checks are not a com
 
 A production deployment would require stronger process or container isolation, least-privilege permissions, filesystem and network restrictions, managed secrets, robust tool authorization, and additional prompt-injection testing.
 
-Provider integrations must also comply with each provider's applicable terms, rate limits, and account policies. Multiple subscriptions should not be assumed to be eligible for pooling or automated use without checking the relevant terms.
+Provider integrations must comply with each provider's applicable terms, rate limits, authentication requirements, and account policies. Multiple subscriptions should not be assumed to be eligible for pooling or automated use without checking the relevant terms. This project is not intended to bypass provider restrictions.
 
 ## Assignment Documentation
 
@@ -265,11 +279,13 @@ The `docs/` directory contains the supporting design documents for the take-home
 This repository is a prototype, not a production-ready orchestration platform.
 
 - Live-provider execution has not been demonstrated for this submission.
+- The current plan parser is deterministic and does not provide LLM-based plan decomposition.
 - Verification relies primarily on deterministic checks and does not prove semantic correctness for arbitrary deliverables.
 - Workspace and command guards do not provide comprehensive operating-system sandboxing.
 - Automated Git conflict resolution is a proposed extension.
 - A complete human-approval workflow is not implemented.
 - Performance with twenty live accounts has not been benchmarked.
+- Some failure and quota scenarios are simulated.
 - Provider compliance depends on the specific integration method and applicable provider policies.
 
 These limitations are documented explicitly to distinguish demonstrated behavior from future design proposals.
@@ -278,14 +294,15 @@ These limitations are documented explicitly to distinguish demonstrated behavior
 
 Potential next steps include:
 
-1. Stronger process isolation and least-privilege execution.
-2. Persistent task state and recovery after interruption.
-3. Quota-aware scheduling and bounded retry policies.
-4. More comprehensive artifact verification and automated test execution.
-5. Git-based integration with conflict detection and controlled merges.
-6. Risk-based human approval for sensitive actions.
-7. Better monitoring, execution metrics, and cost tracking.
-8. Additional validation of provider terms and permitted authentication methods.
+1. LLM-assisted planning and task decomposition with schema validation.
+2. Stronger process isolation and least-privilege execution.
+3. Persistent task state and recovery after interruption.
+4. Quota-aware scheduling and bounded retry policies.
+5. More comprehensive artifact verification and automated test execution.
+6. Git-based integration with conflict detection and controlled merges.
+7. Risk-based human approval for sensitive actions.
+8. Better monitoring, execution metrics, and cost tracking.
+9. Additional validation of provider terms and permitted authentication methods.
 
 ## Design Principle
 
